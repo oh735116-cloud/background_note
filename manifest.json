@@ -3,12 +3,27 @@
   "name": "Memo-Driven Highlighter",
   "version": "0.1.0",
   "description": "Save selected words with memos and use them as personal web highlights.",
-  "permissions": ["storage", "contextMenus", "activeTab", "tabs"],
+  "permissions": ["storage", "contextMenus", "tabs", "sidePanel"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "Memo-Driven_Highlighter.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"]
+    }
+  ],
   "action": {
     "default_title": "Memo Highlighter"
-  }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["floating-widget.html", "floating-widget.css"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
 }

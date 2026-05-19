@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>메모하이라이터</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body data-view="sidepanel">
+    <main class="app-shell sidepanel-shell">
+      <header class="topbar">
+        <div class="title-block">
+          <p class="eyebrow">나만의 공부 다이어리</p>
+          <h1>메모 하이라이터</h1>
+          <p id="countLabel">저장된 메모 0개</p>
+        </div>
+      </header>
+
+      <section class="site-card">
+        <div>
+          <strong>현재 사이트</strong>
+          <p id="currentSiteLabel">확인 중</p>
+        </div>
+        <button id="siteToggleButton" class="site-toggle" type="button">
+          켜짐
+        </button>
+      </section>
+
+      <p id="noticeText" class="notice" hidden></p>
+
+      <form id="highlightForm" class="editor">
+        <input id="highlightId" type="hidden" />
+        <label>
+          <span></span>
+          <input
+            id="keywordInput"
+            name="keyword"
+            type="text"
+            autocomplete="off"
+            placeholder="강조할 단어나 문장"
+            required
+          />
+        </label>
+        <label>
+          <span></span>
+          <textarea
+            id="memoInput"
+            name="memo"
+            rows="5"
+            placeholder="마우스를 올렸을 때 보여줄 메모"
+          ></textarea>
+        </label>
+        <div class="form-row">
+          <label>
+            <span></span>
+            <input id="colorInput" name="color" type="color" value="#fff3a3" />
+          </label>
+          <label class="toggle-row">
+            <input id="activeInput" name="isActive" type="checkbox" checked />
+            <span>하이라이트</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="resetButton" class="secondary-button" type="button">
+            비우기
+          </button>
+          <button class="primary-button" type="submit">저장</button>
+        </div>
+      </form>
+
+      <section class="list-section">
+        <h2>저장된 하이라이트</h2>
+        <div id="highlightList" class="highlight-list"></div>
+      </section>
+    </main>
+    <script src="ui.js"></script>
+  </body>
+</html>
