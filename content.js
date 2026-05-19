@@ -1,10 +1,21 @@
+// ============================================================
+// 상수와 상태값
+// ============================================================
+
+// Chrome storage 키
 const MDH_STORAGE_KEY = "highlights";
+const MDH_PENDING_SELECTION_KEY = "pendingSelection";
 const MDH_SITE_SETTINGS_KEY = "siteSettings";
+
+// DOM/CSS 식별자
 const MDH_HIGHLIGHT_CLASS = "mdh-highlight";
 const MDH_STYLE_ID = "mdh-highlight-style";
 const MDH_TOOLTIP_ID = "mdh-highlight-tooltip";
 const MDH_WIDGET_ID = "mdh-floating-widget";
+const MDH_WIDGET_RECENT_LIMIT = 4;
 const MDH_SELECTOR = `span.${MDH_HIGHLIGHT_CLASS}`;
+
+// 사용자가 입력하거나 코드가 실행되는 영역은 하이라이트하지 않는다.
 const MDH_IGNORED_TAGS = new Set([
   "SCRIPT",
   "STYLE",
@@ -20,33 +31,60 @@ let mdhTooltip = null;
 let mdhWidget = null;
 const mdhTextColorCache = new Map();
 
+// ============================================================
+// 초기 실행과 이벤트 연결
+// ============================================================
+
+// 페이지가 열리면 스타일, 위젯, 저장된 하이라이트를 바로 준비한다.
 injectHighlightStyle();
 initFloatingWidget();
 renderStoredHighlights();
+
+// 이벤트 위임 방식으로 모든 하이라이트 span의 hover 툴팁을 처리한다.
 document.addEventListener("mouseover", handleHighlightMouseOver);
 document.addEventListener("mousemove", handleHighlightMouseMove);
 document.addEventListener("mouseout", handleHighlightMouseOut);
 
+// 다른 화면에서 메모나 사이트 설정을 바꾸면 현재 페이지도 즉시 갱신한다.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (
     areaName === "local" &&
     (changes[MDH_STORAGE_KEY] || changes[MDH_SITE_SETTINGS_KEY])
   ) {
+    if (changes[MDH_STORAGE_KEY]) {
+      renderWidgetRecentHighlights();
+    }
+
+    if (changes[MDH_SITE_SETTINGS_KEY]) {
+      syncWidgetSiteState();
+    }
+
     scheduleHighlightRender();
   }
 });
 
+// background script/sidepanel에서 보내는 새로고침과 선택 텍스트 메시지를 받는다.
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "MDH_REFRESH_HIGHLIGHTS") {
     scheduleHighlightRender();
   }
+
+  if (message?.type === "MDH_SELECTION_CAPTURED") {
+    loadSelectionIntoWidget(message.payload);
+  }
 });
 
+// ============================================================
+// 하이라이트 렌더링
+// ============================================================
+
+// storage 변경이 연속으로 들어와도 실제 렌더링은 한 번만 실행한다.
 function scheduleHighlightRender() {
   clearTimeout(mdhRenderTimer);
   mdhRenderTimer = setTimeout(renderStoredHighlights, 120);
 }
 
+// 저장된 활성 키워드를 읽어 현재 페이지 본문에 하이라이트를 적용한다.
 async function renderStoredHighlights() {
   removeExistingHighlights();
 
@@ -59,6 +97,7 @@ async function renderStoredHighlights() {
   const activeHighlights = highlights
     .map(normalizeHighlight)
     .filter(Boolean)
+    // 긴 키워드를 먼저 처리해야 짧은 키워드가 일부만 먼저 차지하는 일을 막을 수 있다.
     .sort((a, b) => b.keyword.length - a.keyword.length);
 
   if (activeHighlights.length === 0) {
@@ -74,32 +113,28 @@ async function renderStoredHighlights() {
   highlightTextNodes(document.body, matcher);
 }
 
-function getHighlightState() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(
-      [MDH_STORAGE_KEY, MDH_SITE_SETTINGS_KEY],
-      (result) => {
-        resolve({
-          highlights: Array.isArray(result[MDH_STORAGE_KEY])
-            ? result[MDH_STORAGE_KEY]
-            : [],
-          siteSettings: result[MDH_SITE_SETTINGS_KEY] || {},
-        });
-      },
-    );
-  });
+// 하이라이트 목록과 사이트별 설정을 함께 읽는다.
+async function getHighlightState() {
+  const result = await getStorage([MDH_STORAGE_KEY, MDH_SITE_SETTINGS_KEY]);
+
+  return {
+    highlights: normalizeHighlights(result[MDH_STORAGE_KEY]),
+    siteSettings: result[MDH_SITE_SETTINGS_KEY] || {},
+  };
 }
 
 function isSiteDisabled(siteSettings) {
   return Boolean(siteSettings[getCurrentSiteKey()]?.disabled);
 }
 
+// 사이트별 설정 키로 쓸 현재 페이지 대표 주소를 만든다.
 function getCurrentSiteKey() {
   return (
     window.location.hostname || window.location.host || window.location.href
   );
 }
 
+// 비활성/빈 키워드는 제외하고 검색용 소문자 키워드를 추가한다.
 function normalizeHighlight(item) {
   const keyword = normalizeKeyword(item?.keyword);
 
@@ -114,6 +149,7 @@ function normalizeHighlight(item) {
   };
 }
 
+// 여러 키워드를 하나의 정규식으로 묶고, 메모 데이터는 Map으로 빠르게 찾는다.
 function createHighlightMatcher(highlights) {
   const byKeyword = new Map();
   const patterns = [];
@@ -137,10 +173,16 @@ function createHighlightMatcher(highlights) {
   };
 }
 
+// 정규식 특수문자가 들어간 키워드도 문자 그대로 검색되게 만든다.
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// ============================================================
+// 빠른 저장 위젯
+// ============================================================
+
+// 웹페이지 오른쪽 아래에 위젯을 만들고 버튼 이벤트를 연결한다.
 async function initFloatingWidget() {
   if (document.getElementById(MDH_WIDGET_ID)) {
     return;
@@ -155,21 +197,18 @@ async function initFloatingWidget() {
   document.documentElement.appendChild(mdhWidget);
 
   const toggle = mdhWidget.querySelector(".mdh-widget-toggle");
-  const panel = mdhWidget.querySelector(".mdh-widget-panel");
   const close = mdhWidget.querySelector(".mdh-widget-close");
   const sidePanel = mdhWidget.querySelector(".mdh-widget-sidepanel");
   const save = mdhWidget.querySelector(".mdh-widget-save");
   const site = mdhWidget.querySelector(".mdh-widget-site");
 
   toggle.addEventListener("click", () => {
-    panel.hidden = false;
-    toggle.hidden = true;
+    setWidgetExpanded(true);
     mdhWidget.querySelector(".mdh-widget-keyword").focus();
   });
 
   close.addEventListener("click", () => {
-    panel.hidden = true;
-    toggle.hidden = false;
+    setWidgetExpanded(false);
   });
 
   sidePanel.addEventListener("click", openWidgetSidePanel);
@@ -177,13 +216,27 @@ async function initFloatingWidget() {
   site.addEventListener("click", toggleWidgetSite);
 
   await syncWidgetSiteState();
+  await renderWidgetRecentHighlights();
+  await loadStoredPendingSelection();
 }
 
+// 위젯을 열면 패널을 보여주고, 최소화하면 오른쪽 아래 아이콘만 남긴다.
+function setWidgetExpanded(isExpanded) {
+  const toggle = mdhWidget.querySelector(".mdh-widget-toggle");
+  const panel = mdhWidget.querySelector(".mdh-widget-panel");
+
+  panel.hidden = !isExpanded;
+  toggle.hidden = isExpanded;
+  toggle.setAttribute("aria-expanded", String(isExpanded));
+}
+
+// manifest의 web_accessible_resources에 등록된 위젯 HTML을 불러온다.
 async function loadFloatingWidgetTemplate() {
   const response = await fetch(chrome.runtime.getURL("floating-widget.html"));
   return response.text();
 }
 
+// 위젯에서 사이드패널 관리 화면을 연다.
 async function openWidgetSidePanel() {
   try {
     const response = await chrome.runtime.sendMessage({
@@ -198,6 +251,33 @@ async function openWidgetSidePanel() {
   }
 }
 
+// 우클릭 메뉴로 가져온 선택 텍스트를 위젯 입력칸에 넣는다.
+function loadSelectionIntoWidget(selection) {
+  const keyword = normalizeKeyword(selection?.keyword);
+
+  if (!keyword || !mdhWidget) {
+    return;
+  }
+
+  const keywordInput = mdhWidget.querySelector(".mdh-widget-keyword");
+
+  setWidgetExpanded(true);
+  keywordInput.value = keyword;
+  keywordInput.focus();
+  showWidgetMessage("선택한 텍스트를 가져왔어요.");
+}
+
+// 메시지 타이밍을 놓쳤을 때를 대비해 저장된 임시 선택 텍스트도 확인한다.
+async function loadStoredPendingSelection() {
+  const result = await getStorage([MDH_PENDING_SELECTION_KEY]);
+  const selection = result[MDH_PENDING_SELECTION_KEY];
+
+  if (selection?.sourceUrl === window.location.href) {
+    loadSelectionIntoWidget(selection);
+  }
+}
+
+// 위젯 전용 CSS를 페이지에 주입한다.
 function injectFloatingWidgetStyle() {
   if (document.getElementById(`${MDH_WIDGET_ID}-style`)) {
     return;
@@ -210,6 +290,7 @@ function injectFloatingWidgetStyle() {
   document.documentElement.appendChild(link);
 }
 
+// 위젯 입력값을 저장한다. 같은 키워드가 있으면 기존 항목을 갱신한다.
 async function saveWidgetHighlight() {
   const keywordInput = mdhWidget.querySelector(".mdh-widget-keyword");
   const memoInput = mdhWidget.querySelector(".mdh-widget-memo");
@@ -228,6 +309,8 @@ async function saveWidgetHighlight() {
     (item) =>
       normalizeKeyword(item.keyword).toLowerCase() === keyword.toLowerCase(),
   );
+
+  // 기존 항목은 id/createdAt을 유지한다.
   const nextHighlight = {
     ...(existingIndex >= 0 ? highlights[existingIndex] : {}),
     id: existingIndex >= 0 ? highlights[existingIndex].id : createId(),
@@ -247,13 +330,73 @@ async function saveWidgetHighlight() {
     highlights.unshift(nextHighlight);
   }
 
-  await setStorage({ [MDH_STORAGE_KEY]: highlights });
+  await setStorage({
+    [MDH_STORAGE_KEY]: highlights,
+    [MDH_PENDING_SELECTION_KEY]: null,
+  });
+
+  // 저장 후 입력칸, 최근 목록, 본문 하이라이트를 갱신한다.
   keywordInput.value = "";
   memoInput.value = "";
   showWidgetMessage("저장했어요.");
+  renderWidgetRecentHighlights(highlights);
   scheduleHighlightRender();
 }
 
+// 최근 메모를 위젯에 보여주고, 클릭하면 입력칸에 다시 불러온다.
+async function renderWidgetRecentHighlights(nextHighlights) {
+  if (!mdhWidget) {
+    return;
+  }
+
+  const list = mdhWidget.querySelector(".mdh-widget-recent-list");
+
+  if (!list) {
+    return;
+  }
+
+  const highlights = Array.isArray(nextHighlights)
+    ? nextHighlights
+    : await getHighlights();
+  const recentHighlights = highlights.slice(0, MDH_WIDGET_RECENT_LIMIT);
+
+  if (recentHighlights.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "mdh-widget-empty";
+    empty.textContent = "아직 저장된 메모가 없습니다.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  recentHighlights.forEach((item) => {
+    const recent = document.createElement("button");
+    recent.className = "mdh-widget-recent-item";
+    recent.type = "button";
+    recent.title = item.memo || item.keyword || "";
+
+    const keyword = document.createElement("span");
+    keyword.className = "mdh-widget-recent-keyword";
+    keyword.textContent = item.keyword || "(비어 있음)";
+
+    const memo = document.createElement("span");
+    memo.className = "mdh-widget-recent-memo";
+    memo.textContent = item.memo || "메모 없음";
+
+    recent.append(keyword, memo);
+    recent.addEventListener("click", () => {
+      mdhWidget.querySelector(".mdh-widget-keyword").value = item.keyword || "";
+      mdhWidget.querySelector(".mdh-widget-memo").value = item.memo || "";
+      mdhWidget.querySelector(".mdh-widget-color").value =
+        item.color || "#fff3a3";
+    });
+    fragment.append(recent);
+  });
+
+  list.replaceChildren(fragment);
+}
+
+// 현재 사이트의 하이라이트 사용 여부를 바꾼다.
 async function toggleWidgetSite() {
   const settings = await getSiteSettings();
   const siteKey = getCurrentSiteKey();
@@ -269,6 +412,7 @@ async function toggleWidgetSite() {
   scheduleHighlightRender();
 }
 
+// 저장된 사이트 설정에 맞춰 위젯의 켜짐/꺼짐 표시를 바꾼다.
 async function syncWidgetSiteState() {
   if (!mdhWidget) {
     return;
@@ -281,20 +425,7 @@ async function syncWidgetSiteState() {
   siteButton.classList.toggle("is-off", disabled);
 }
 
-function getSiteSettings() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([MDH_SITE_SETTINGS_KEY], (result) => {
-      resolve(result[MDH_SITE_SETTINGS_KEY] || {});
-    });
-  });
-}
-
-function setStorage(data) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set(data, resolve);
-  });
-}
-
+// 위젯에 짧은 상태 메시지를 보여주고 잠시 뒤 숨긴다.
 function showWidgetMessage(message) {
   const messageElement = mdhWidget.querySelector(".mdh-widget-message");
   messageElement.textContent = message;
@@ -305,16 +436,11 @@ function showWidgetMessage(message) {
   }, 1800);
 }
 
-function getHighlights() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([MDH_STORAGE_KEY], (result) => {
-      resolve(
-        Array.isArray(result[MDH_STORAGE_KEY]) ? result[MDH_STORAGE_KEY] : [],
-      );
-    });
-  });
-}
+// ============================================================
+// 텍스트 노드 치환
+// ============================================================
 
+// TreeWalker로 텍스트 노드만 모아 하이라이트 치환을 수행한다.
 function highlightTextNodes(root, matcher) {
   if (!root) {
     return;
@@ -338,6 +464,7 @@ function highlightTextNodes(root, matcher) {
   textNodes.forEach((node) => replaceTextNodeMatches(node, matcher));
 }
 
+// 매칭된 구간만 span으로 감싸고 나머지 텍스트는 그대로 둔다.
 function replaceTextNodeMatches(textNode, matcher) {
   const text = textNode.nodeValue;
   const matches = findMatches(text, matcher);
@@ -361,6 +488,7 @@ function replaceTextNodeMatches(textNode, matcher) {
     span.dataset.mdhKeyword = match.highlight.keyword;
     span.dataset.mdhMemo = match.highlight.memo || "";
     span.style.backgroundColor = backgroundColor;
+    // 배경색에 맞춰 글자색을 바꿔 가독성을 유지한다.
     span.style.color = getReadableTextColor(backgroundColor);
     span.textContent = text.slice(match.start, match.end);
     fragment.append(span);
@@ -375,6 +503,7 @@ function replaceTextNodeMatches(textNode, matcher) {
   textNode.parentNode.replaceChild(fragment, textNode);
 }
 
+// 정규식 결과와 실제 하이라이트 데이터를 묶어 매칭 목록으로 만든다.
 function findMatches(text, matcher) {
   const matches = [];
   matcher.regex.lastIndex = 0;
@@ -402,6 +531,7 @@ function findMatches(text, matcher) {
   return matches;
 }
 
+// 다시 렌더링하기 전에 기존 span을 텍스트로 되돌려 중복 감싸기를 막는다.
 function removeExistingHighlights() {
   hideMemoTooltip();
 
@@ -416,6 +546,11 @@ function removeExistingHighlights() {
   touchedParents.forEach((parent) => parent.normalize());
 }
 
+// ============================================================
+// 메모 툴팁
+// ============================================================
+
+// 하이라이트 위에 마우스가 올라오면 메모가 있는 경우에만 툴팁을 띄운다.
 function handleHighlightMouseOver(event) {
   const highlight = event.target.closest?.(MDH_SELECTOR);
 
@@ -432,12 +567,14 @@ function handleHighlightMouseOver(event) {
   showMemoTooltip(memo, event);
 }
 
+// 열린 툴팁은 마우스 이동에 맞춰 위치를 갱신한다.
 function handleHighlightMouseMove(event) {
   if (mdhTooltip && !mdhTooltip.hidden) {
     positionMemoTooltip(event);
   }
 }
 
+// 하이라이트 영역을 벗어나면 툴팁을 숨긴다.
 function handleHighlightMouseOut(event) {
   const highlight = event.target.closest?.(MDH_SELECTOR);
 
@@ -452,6 +589,7 @@ function handleHighlightMouseOut(event) {
   hideMemoTooltip();
 }
 
+// 툴팁에 메모를 넣고 마우스 근처에 표시한다.
 function showMemoTooltip(memo, event) {
   const tooltip = getMemoTooltip();
   tooltip.textContent = memo;
@@ -459,12 +597,14 @@ function showMemoTooltip(memo, event) {
   positionMemoTooltip(event);
 }
 
+// 툴팁을 DOM에서 제거하지 않고 숨겨서 다음 hover 때 재사용한다.
 function hideMemoTooltip() {
   if (mdhTooltip) {
     mdhTooltip.hidden = true;
   }
 }
 
+// 툴팁 DOM은 한 번만 만들고 재사용한다.
 function getMemoTooltip() {
   if (mdhTooltip) {
     return mdhTooltip;
@@ -478,6 +618,7 @@ function getMemoTooltip() {
   return mdhTooltip;
 }
 
+// 툴팁이 화면 밖으로 나가지 않도록 좌표를 보정한다.
 function positionMemoTooltip(event) {
   const tooltip = getMemoTooltip();
   const offset = 12;
@@ -491,6 +632,11 @@ function positionMemoTooltip(event) {
   tooltip.style.top = `${top}px`;
 }
 
+// ============================================================
+// 스타일과 유틸리티
+// ============================================================
+
+// 입력창, 스크립트, 위젯 내부처럼 하이라이트하면 안 되는 노드를 걸러낸다.
 function shouldIgnoreNode(node) {
   const parent = node.parentElement;
 
@@ -505,6 +651,7 @@ function shouldIgnoreNode(node) {
   return Boolean(parent.closest(Array.from(MDH_IGNORED_TAGS).join(",")));
 }
 
+// 하이라이트 span과 메모 툴팁의 기본 스타일을 페이지에 주입한다.
 function injectHighlightStyle() {
   if (document.getElementById(MDH_STYLE_ID)) {
     return;
@@ -546,6 +693,7 @@ function injectHighlightStyle() {
   document.documentElement.appendChild(style);
 }
 
+// 배경색 밝기를 계산해 읽기 쉬운 글자색을 고른다.
 function getReadableTextColor(backgroundColor) {
   if (mdhTextColorCache.has(backgroundColor)) {
     return mdhTextColorCache.get(backgroundColor);
@@ -564,11 +712,7 @@ function getReadableTextColor(backgroundColor) {
   );
 }
 
-function cacheTextColor(backgroundColor, textColor) {
-  mdhTextColorCache.set(backgroundColor, textColor);
-  return textColor;
-}
-
+// #rgb, #rrggbb 형식의 색상 문자열을 RGB 숫자 값으로 변환한다.
 function parseColor(value) {
   const color = String(value || "").trim();
 
@@ -592,12 +736,48 @@ function parseColor(value) {
   return null;
 }
 
+// storage 접근을 Promise로 감싸 async/await에서 쓰기 쉽게 만든다.
+function getStorage(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(keys, resolve);
+  });
+}
+
+function setStorage(data) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set(data, resolve);
+  });
+}
+
+function getSiteSettings() {
+  return getStorage([MDH_SITE_SETTINGS_KEY]).then(
+    (result) => result[MDH_SITE_SETTINGS_KEY] || {},
+  );
+}
+
+function getHighlights() {
+  return getStorage([MDH_STORAGE_KEY]).then((result) =>
+    normalizeHighlights(result[MDH_STORAGE_KEY]),
+  );
+}
+
+function cacheTextColor(backgroundColor, textColor) {
+  mdhTextColorCache.set(backgroundColor, textColor);
+  return textColor;
+}
+
+function normalizeHighlights(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// 키워드 공백을 정리해 비교/저장 기준을 통일한다.
 function normalizeKeyword(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// storage에 저장할 하이라이트 id를 만든다.
 function createId() {
   return `hl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

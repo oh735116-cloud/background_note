@@ -1,61 +1,75 @@
-//이해못한거 주석처리
+// ============================================================
+// 상수와 기본 설정
+// ============================================================
 
+// Chrome storage에서 사용하는 키
 const STORAGE_KEYS = {
   highlights: "highlights",
   pendingSelection: "pendingSelection",
-}; // 키를 정의한 객체
+};
 
-const CONTEXT_MENU_ID = "mdh-save-selection"; // context menu 고유ID, 프로그램이 선택한 텍스트
-const DEFAULT_COLOR = "#fff3a3"; // 기본하이라이트색
+// 컨텍스트 메뉴 id와 새 하이라이트의 기본 색상
+const CONTEXT_MENU_ID = "mdh-save-selection";
+const DEFAULT_COLOR = "#fff3a3";
 
 enableSidePanelOnActionClick();
 
+// ============================================================
+// 확장 프로그램 생명주기
+// ============================================================
+
+// 설치/업데이트 시 컨텍스트 메뉴와 storage 구조를 준비한다.
 chrome.runtime.onInstalled.addListener(() => {
-  // 확장 프로그램이 설치되거나 업데이트될 때마다 실행되는 이벤트 리스너입니다. 이 이벤트는 확장 프로그램이 처음 설치될 때뿐만 아니라 업데이트될 때도 발생합니다. 따라서 이 리스너는 확장 프로그램의 초기 설정을 수행하는 데 적합합니다.
-  createContextMenu(); // 확장 프로그램이 설치되거나 업데이트될 때마다 컨텍스트 메뉴를 생성하는 함수를 호출합니다. 이 함수는 사용자가 웹 페이지에서 텍스트를 선택했을 때 나타나는 메뉴에 "선택한 텍스트를 메모 하이라이트로 저장" 옵션을 추가합니다.
-  ensureStorageShape(); // 확장 프로그램이 설치되거나 업데이트될 때마다 스토리지의 초기 구조를 보장하는 함수를 호출합니다. 이 함수는 스토리지에 "highlights" 키가 배열 형태로 존재하는지 확인하고, 존재하지 않거나 올바른 형태가 아니면 초기값으로 빈 배열을 설정합니다. 이를 통해 확장 프로그램이 예상하는 데이터 구조를 유지할 수 있습니다.
+  createContextMenu();
+  ensureStorageShape();
   enableSidePanelOnActionClick();
 });
 
+// 브라우저가 다시 시작될 때도 최소 상태를 보장한다.
 chrome.runtime.onStartup.addListener(() => {
-  ensureStorageShape(); // 브라우저가 시작할때 불러오는 함수
+  ensureStorageShape();
   enableSidePanelOnActionClick();
 });
 
+// ============================================================
+// 컨텍스트 메뉴: 선택 텍스트 가져오기
+// ============================================================
+
+// 사용자가 우클릭 메뉴를 누르면 선택한 텍스트를 임시 키워드로 저장하고 content script에 알린다.
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== CONTEXT_MENU_ID || !info.selectionText) {
     return;
-  } // 117번 라인에서 정의한 함수와 선택된 텍스트가 없으면 종료
+  }
 
-  const keyword = normalizeKeyword(info.selectionText); // 선택된 택스트를 정규화하는 함수 (공백제거 ,대소문자구분)
+  const keyword = normalizeKeyword(info.selectionText);
 
   if (!keyword) {
     return;
-  } // 26번 라인이 빈문자열이면 종료
+  }
 
   const pendingSelection = {
-    keyword, // 선택된 텍스트
-    sourceUrl: tab?.url || info.pageUrl || "", // 선택된 텍스트 url가져오기, 탭의 url없으면 info(현재페이지).pageUrl(의url), 없으면 빈문자열
-    tabId: tab?.id || null, // 탭의 id 가져오기 없으면 null(널)
-    createdAt: new Date().toISOString(), // to/ISO/String 날자를 문자열로 바꿔줌
-  }; 
+    keyword,
+    sourceUrl: tab?.url || info.pageUrl || "",
+    tabId: tab?.id || null,
+    createdAt: new Date().toISOString(),
+  };
 
   chrome.storage.local.set(
     { [STORAGE_KEYS.pendingSelection]: pendingSelection },
     () => {
-      notifyRuntime({
-        type: "MDH_SELECTION_CAPTURED", // 
-        payload: pendingSelection,
-      });
-
       notifyTab(tab?.id, {
         type: "MDH_SELECTION_CAPTURED",
         payload: pendingSelection,
       });
     },
   );
-}); //
+});
 
+// ============================================================
+// runtime 메시지 라우터
+// ============================================================
+
+// sidepanel, 위젯, content script가 보내는 요청을 한곳에서 처리한다.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {
     return false;
@@ -75,6 +89,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+// 메시지 type별로 storage CRUD, 탭 새로고침, 사이드패널 열기를 수행한다.
 async function handleMessage(message, sender) {
   switch (message.type) {
     case "MDH_GET_HIGHLIGHTS":
@@ -118,6 +133,11 @@ async function handleMessage(message, sender) {
   }
 }
 
+// ============================================================
+// 초기 설정
+// ============================================================
+
+// 선택 텍스트를 메모 키워드로 가져오는 우클릭 메뉴를 만든다.
 function createContextMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -126,16 +146,18 @@ function createContextMenu() {
       contexts: ["selection"],
     });
   });
-} // 선택한 텍스트 하이라이트저장하는 컨텍스메뉴생성함수
+}
 
+// highlights가 항상 배열 형태로 존재하도록 보정한다.
 async function ensureStorageShape() {
   const result = await getStorage([STORAGE_KEYS.highlights]);
 
   if (!Array.isArray(result[STORAGE_KEYS.highlights])) {
     await setStorage({ [STORAGE_KEYS.highlights]: [] });
   }
-} // 웹 스토리지에 저장하는 함수 배열형태로 저장하는 함수,[]
+}
 
+// 확장 아이콘 클릭 시 팝업 대신 사이드패널이 열리도록 설정한다.
 function enableSidePanelOnActionClick() {
   if (!chrome.sidePanel?.setPanelBehavior) {
     return;
@@ -148,6 +170,11 @@ function enableSidePanelOnActionClick() {
     });
 }
 
+// ============================================================
+// 하이라이트 데이터 관리
+// ============================================================
+
+// 저장된 하이라이트 목록을 읽고, 값이 없거나 잘못되면 빈 배열을 반환한다.
 async function getHighlights() {
   const result = await getStorage([STORAGE_KEYS.highlights]);
   return Array.isArray(result[STORAGE_KEYS.highlights])
@@ -155,6 +182,7 @@ async function getHighlights() {
     : [];
 }
 
+// 새 하이라이트를 저장한다. 같은 키워드가 있으면 기존 항목을 갱신한다.
 async function createHighlight(payload = {}, sender = {}) {
   const keyword = normalizeKeyword(payload.keyword);
 
@@ -165,11 +193,13 @@ async function createHighlight(payload = {}, sender = {}) {
   const now = new Date().toISOString();
   const highlights = await getHighlights();
   const existingIndex = highlights.findIndex(
-    (item) => item.keyword.trim().toLowerCase() === keyword.toLowerCase()
+    (item) =>
+      normalizeKeyword(item.keyword).toLowerCase() === keyword.toLowerCase()
   );
 
   let savedHighlight;
 
+  // 기존 항목은 id/createdAt을 유지하고 내용만 갱신한다.
   if (existingIndex >= 0) {
     savedHighlight = {
       ...highlights[existingIndex],
@@ -184,6 +214,7 @@ async function createHighlight(payload = {}, sender = {}) {
 
     highlights[existingIndex] = savedHighlight;
   } else {
+    // 새 항목은 최신 목록 맨 앞에 넣는다.
     savedHighlight = {
       id: createId(),
       keyword,
@@ -204,6 +235,7 @@ async function createHighlight(payload = {}, sender = {}) {
   return savedHighlight;
 }
 
+// id로 기존 하이라이트를 찾아 수정한다.
 async function updateHighlight(payload = {}) {
   if (!payload.id) {
     throw new Error("수정할 하이라이트 id가 없습니다.");
@@ -243,6 +275,7 @@ async function updateHighlight(payload = {}) {
   return updatedHighlight;
 }
 
+// id에 해당하는 하이라이트를 삭제한다.
 async function deleteHighlight(id) {
   if (!id) {
     throw new Error("삭제할 하이라이트 id가 없습니다.");
@@ -255,16 +288,23 @@ async function deleteHighlight(id) {
   await broadcastHighlightRefresh();
 }
 
+// 컨텍스트 메뉴로 가져온 임시 선택 텍스트를 읽는다.
 async function getPendingSelection() {
   const result = await getStorage([STORAGE_KEYS.pendingSelection]);
   return result[STORAGE_KEYS.pendingSelection] || null;
 }
 
+// ============================================================
+// 탭/사이드패널 동기화
+// ============================================================
+
+// 현재 활성 탭에 하이라이트를 다시 그리라고 알린다.
 async function refreshActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await notifyTab(tab?.id, { type: "MDH_REFRESH_HIGHLIGHTS" });
 }
 
+// 모든 일반 웹 탭에 하이라이트 새로고침 메시지를 보낸다.
 async function broadcastHighlightRefresh() {
   const tabs = await chrome.tabs.query({});
   await Promise.all(
@@ -274,6 +314,7 @@ async function broadcastHighlightRefresh() {
   );
 }
 
+// 특정 탭 기준으로 사이드패널을 연다.
 async function openSidePanel(tabId) {
   if (!tabId || !chrome.sidePanel?.open) {
     return;
@@ -282,24 +323,25 @@ async function openSidePanel(tabId) {
   await chrome.sidePanel.open({ tabId });
 }
 
+// ============================================================
+// 공통 유틸리티
+// ============================================================
+
+// chrome.storage.local.get을 Promise로 감싸 async/await에서 쓰기 쉽게 만든다.
 function getStorage(keys) {
   return new Promise((resolve) => {
     chrome.storage.local.get(keys, resolve);
   });
 }
 
+// chrome.storage.local.set을 Promise로 감싸 저장 완료 후 다음 작업을 이어갈 수 있게 한다.
 function setStorage(data) {
   return new Promise((resolve) => {
     chrome.storage.local.set(data, resolve);
   });
 }
 
-function notifyRuntime(message) {
-  chrome.runtime.sendMessage(message).catch(() => {
-    // No popup or sidepanel is currently listening.
-  });
-}
-
+// 특정 탭의 content script로 메시지를 보낸다.
 function notifyTab(tabId, message) {
   if (!tabId) {
     return Promise.resolve();
@@ -310,20 +352,23 @@ function notifyTab(tabId, message) {
   });
 }
 
+// content script가 주입되는 http/https 탭만 메시지 대상으로 삼는다.
 function canMessageTab(tab) {
   return Boolean(
     tab?.id &&
       tab.url &&
-      /^(https?:|file:)/.test(tab.url)
+      /^https?:/.test(tab.url)
   );
 }
 
+// 키워드 앞뒤 공백과 연속 공백을 정리한다.
 function normalizeKeyword(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// storage에 저장할 하이라이트 id를 만든다.
 function createId() {
   return `hl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

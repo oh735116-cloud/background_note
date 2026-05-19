@@ -25,13 +25,39 @@
 }
 
 .mdh-widget-toggle {
-  width: 58px;
-  height: 58px;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fff6fb, #ffe1ed);
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid #ffd2e1 !important;
+  border-radius: 50%;
+  background:
+    linear-gradient(180deg, #fff6fb, #ffe1ed),
+    #ffe1ed;
   box-shadow: 0 12px 28px rgba(123, 83, 58, 0.22);
   color: #7d3751;
   font-weight: 900;
+}
+
+.mdh-widget-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 143, 179, 0.3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.mdh-widget-toggle-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .mdh-widget-panel {
@@ -141,6 +167,65 @@
   box-shadow: 0 8px 16px rgba(255, 124, 166, 0.24);
   color: #ffffff;
   font-weight: 900;
+}
+
+.mdh-widget-recent {
+  display: grid;
+  gap: 6px;
+}
+
+.mdh-widget-recent-title {
+  color: #735549;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mdh-widget-recent-list {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.mdh-widget-recent-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid #efd4c2 !important;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #4b342b;
+  text-align: left;
+}
+
+.mdh-widget-recent-keyword {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdh-widget-recent-memo,
+.mdh-widget-empty {
+  color: #8a7168;
+  font-size: 12px;
+}
+
+.mdh-widget-recent-memo {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mdh-widget-empty {
+  padding: 8px 9px;
+  border: 1px dashed #e9bfce;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.58);
+  text-align: center;
 }
 
 .mdh-widget-message {

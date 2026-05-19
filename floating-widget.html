@@ -1,5 +1,12 @@
-<button class="mdh-widget-toggle" type="button" title="메모 하이라이터 열기">
-  메모
+<button
+  class="mdh-widget-toggle"
+  type="button"
+  title="메모 하이라이터 열기"
+  aria-label="메모 하이라이터 열기"
+  aria-expanded="false"
+>
+  <span class="mdh-widget-mark" aria-hidden="true">M</span>
+  <span class="mdh-widget-toggle-text">메모 하이라이터 열기</span>
 </button>
 <div class="mdh-widget-panel" hidden>
   <div class="mdh-widget-header">
@@ -14,7 +21,7 @@
       >
         사이드패널
       </button>
-      <button class="mdh-widget-close" type="button" title="닫기">닫기</button>
+      <button class="mdh-widget-close" type="button" title="최소화">최소화</button>
     </div>
   </div>
   <label>
@@ -38,5 +45,9 @@
     <button class="mdh-widget-site" type="button">현재 사이트 켜짐</button>
   </div>
   <button class="mdh-widget-save" type="button">저장하고 하이라이트</button>
+  <section class="mdh-widget-recent" aria-label="최근 메모">
+    <div class="mdh-widget-recent-title">최근 메모</div>
+    <div class="mdh-widget-recent-list"></div>
+  </section>
   <p class="mdh-widget-message" hidden></p>
 </div>
