@@ -238,6 +238,8 @@ async function loadFloatingWidgetTemplate() {
 
 // 위젯에서 사이드패널 관리 화면을 연다.
 async function openWidgetSidePanel() {
+  setWidgetExpanded(false);
+
   try {
     const response = await chrome.runtime.sendMessage({
       type: "MDH_OPEN_SIDE_PANEL",
