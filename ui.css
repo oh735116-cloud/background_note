@@ -174,7 +174,7 @@ h2 {
     linear-gradient(
       90deg,
       rgba(255, 143, 179, 0.2) 0 2px,
-      transparent 2px 100%
+      transparent 20px 100%
     ),
     repeating-linear-gradient(#fffdf7 0 31px, #f5dfd0 32px), var(--paper);
   box-shadow: var(--shadow);

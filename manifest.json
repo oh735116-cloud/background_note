@@ -20,9 +20,24 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
+
+  "icons": {
+    "16": "icon/icon-16x16.png",
+    "48": "icon/icon-48x48.png",
+    "128": "icon/icon-128x128.png"
+  },
   "web_accessible_resources": [
     {
       "resources": ["floating-widget.html", "floating-widget.css"],
+      "matches": ["http://*/*", "https://*/*"]
+    },
+    {
+      "resources": [
+        "icon/icon-16x16.png",
+        "icon/icon-32x32.png",
+        "icon/icon-48x48.png",
+        "icon/icon-128x128.png"
+      ],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

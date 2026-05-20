@@ -82,7 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .catch((error) => {
       sendResponse({
         ok: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     });
 
@@ -94,17 +94,17 @@ async function handleMessage(message, sender) {
   switch (message.type) {
     case "MDH_GET_HIGHLIGHTS":
       return {
-        highlights: await getHighlights()
+        highlights: await getHighlights(),
       };
 
     case "MDH_CREATE_HIGHLIGHT":
       return {
-        highlight: await createHighlight(message.payload, sender)
+        highlight: await createHighlight(message.payload, sender),
       };
 
     case "MDH_UPDATE_HIGHLIGHT":
       return {
-        highlight: await updateHighlight(message.payload)
+        highlight: await updateHighlight(message.payload),
       };
 
     case "MDH_DELETE_HIGHLIGHT":
@@ -113,7 +113,7 @@ async function handleMessage(message, sender) {
 
     case "MDH_GET_PENDING_SELECTION":
       return {
-        pendingSelection: await getPendingSelection()
+        pendingSelection: await getPendingSelection(),
       };
 
     case "MDH_CLEAR_PENDING_SELECTION":
@@ -125,8 +125,12 @@ async function handleMessage(message, sender) {
       return { refreshed: true };
 
     case "MDH_OPEN_SIDE_PANEL":
-      await openSidePanel(message.payload?.tabId ?? sender.tab?.id);
+      await openSidePanel(message.payload, sender.tab);
       return { opened: true };
+
+    case "MDH_CLOSE_SIDE_PANEL":
+      await closeSidePanel(message.payload, sender.tab);
+      return { closed: true };
 
     default:
       throw new Error(`Unknown message type: ${message.type}`);
@@ -194,7 +198,7 @@ async function createHighlight(payload = {}, sender = {}) {
   const highlights = await getHighlights();
   const existingIndex = highlights.findIndex(
     (item) =>
-      normalizeKeyword(item.keyword).toLowerCase() === keyword.toLowerCase()
+      normalizeKeyword(item.keyword).toLowerCase() === keyword.toLowerCase(),
   );
 
   let savedHighlight;
@@ -204,12 +208,17 @@ async function createHighlight(payload = {}, sender = {}) {
     savedHighlight = {
       ...highlights[existingIndex],
       memo: payload.memo ?? highlights[existingIndex].memo ?? "",
-      sourceUrl: payload.sourceUrl ?? highlights[existingIndex].sourceUrl ?? sender.tab?.url ?? "",
+      sourceUrl:
+        payload.sourceUrl ??
+        highlights[existingIndex].sourceUrl ??
+        sender.tab?.url ??
+        "",
       color: payload.color || highlights[existingIndex].color || DEFAULT_COLOR,
-      isActive: typeof payload.isActive === "boolean"
-        ? payload.isActive
-        : highlights[existingIndex].isActive !== false,
-      updatedAt: now
+      isActive:
+        typeof payload.isActive === "boolean"
+          ? payload.isActive
+          : highlights[existingIndex].isActive !== false,
+      updatedAt: now,
     };
 
     highlights[existingIndex] = savedHighlight;
@@ -223,7 +232,7 @@ async function createHighlight(payload = {}, sender = {}) {
       color: payload.color || DEFAULT_COLOR,
       isActive: payload.isActive !== false,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
 
     highlights.unshift(savedHighlight);
@@ -249,9 +258,10 @@ async function updateHighlight(payload = {}) {
   }
 
   const current = highlights[targetIndex];
-  const nextKeyword = payload.keyword === undefined
-    ? current.keyword
-    : normalizeKeyword(payload.keyword);
+  const nextKeyword =
+    payload.keyword === undefined
+      ? current.keyword
+      : normalizeKeyword(payload.keyword);
 
   if (!nextKeyword) {
     throw new Error("키워드를 입력해 주세요.");
@@ -261,10 +271,14 @@ async function updateHighlight(payload = {}) {
     ...current,
     keyword: nextKeyword,
     memo: payload.memo === undefined ? current.memo : payload.memo,
-    sourceUrl: payload.sourceUrl === undefined ? current.sourceUrl : payload.sourceUrl,
+    sourceUrl:
+      payload.sourceUrl === undefined ? current.sourceUrl : payload.sourceUrl,
     color: payload.color || current.color || DEFAULT_COLOR,
-    isActive: typeof payload.isActive === "boolean" ? payload.isActive : current.isActive !== false,
-    updatedAt: new Date().toISOString()
+    isActive:
+      typeof payload.isActive === "boolean"
+        ? payload.isActive
+        : current.isActive !== false,
+    updatedAt: new Date().toISOString(),
   };
 
   highlights[targetIndex] = updatedHighlight;
@@ -310,17 +324,51 @@ async function broadcastHighlightRefresh() {
   await Promise.all(
     tabs
       .filter((tab) => canMessageTab(tab))
-      .map((tab) => notifyTab(tab.id, { type: "MDH_REFRESH_HIGHLIGHTS" }))
+      .map((tab) => notifyTab(tab.id, { type: "MDH_REFRESH_HIGHLIGHTS" })),
   );
 }
 
 // 특정 탭 기준으로 사이드패널을 연다.
-async function openSidePanel(tabId) {
-  if (!tabId || !chrome.sidePanel?.open) {
+async function openSidePanel(payload = {}, tab = {}) {
+  if (!chrome.sidePanel?.open) {
+    throw new Error(
+      "This Chrome version does not support opening side panels.",
+    );
+  }
+
+  const tabId = payload?.tabId ?? tab?.id;
+  const windowId = payload?.windowId ?? tab?.windowId;
+
+  if (windowId) {
+    await chrome.sidePanel.open({ windowId });
     return;
   }
 
-  await chrome.sidePanel.open({ tabId });
+  if (tabId) {
+    await chrome.sidePanel.open({ tabId });
+    return;
+  }
+
+  throw new Error("Cannot find a tab or window for the side panel.");
+}
+
+async function closeSidePanel(payload = {}, tab = {}) {
+  if (!chrome.sidePanel?.close) {
+    return;
+  }
+
+  const tabId = payload?.tabId ?? tab?.id;
+  const windowId = payload?.windowId ?? tab?.windowId;
+
+  if (windowId) {
+    await chrome.sidePanel.close({ windowId });
+    return;
+  }
+
+  if (tabId) {
+    await chrome.sidePanel.close({ tabId });
+    return;
+  }
 }
 
 // ============================================================
@@ -354,11 +402,7 @@ function notifyTab(tabId, message) {
 
 // content script가 주입되는 http/https 탭만 메시지 대상으로 삼는다.
 function canMessageTab(tab) {
-  return Boolean(
-    tab?.id &&
-      tab.url &&
-      /^https?:/.test(tab.url)
-  );
+  return Boolean(tab?.id && tab.url && /^https?:/.test(tab.url));
 }
 
 // 키워드 앞뒤 공백과 연속 공백을 정리한다.

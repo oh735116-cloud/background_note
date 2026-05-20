@@ -192,6 +192,10 @@ async function initFloatingWidget() {
 
   mdhWidget = document.createElement("section");
   mdhWidget.id = MDH_WIDGET_ID;
+  mdhWidget.style.setProperty(
+    "--mdh-widget-icon-url",
+    `url("${chrome.runtime.getURL("icon/icon-48x48.png")}")`,
+  );
   mdhWidget.innerHTML = await loadFloatingWidgetTemplate();
 
   document.documentElement.appendChild(mdhWidget);
@@ -202,7 +206,8 @@ async function initFloatingWidget() {
   const save = mdhWidget.querySelector(".mdh-widget-save");
   const site = mdhWidget.querySelector(".mdh-widget-site");
 
-  toggle.addEventListener("click", () => {
+  toggle.addEventListener("click", async () => {
+    await closeWidgetSidePanel();
     setWidgetExpanded(true);
     mdhWidget.querySelector(".mdh-widget-keyword").focus();
   });
@@ -238,18 +243,32 @@ async function loadFloatingWidgetTemplate() {
 
 // 위젯에서 사이드패널 관리 화면을 연다.
 async function openWidgetSidePanel() {
-  setWidgetExpanded(false);
-
   try {
     const response = await chrome.runtime.sendMessage({
       type: "MDH_OPEN_SIDE_PANEL",
     });
 
+    const opened = response?.ok && response.payload?.opened;
+
+    if (opened) {
+      setWidgetExpanded(false);
+    }
+
     showWidgetMessage(
-      response?.ok ? "사이드패널을 열었어요." : "사이드패널을 열 수 없어요.",
+      opened ? "사이드패널을 열었어요." : "사이드패널을 열 수 없어요.",
     );
   } catch (error) {
     showWidgetMessage("사이드패널을 열 수 없어요.");
+  }
+}
+
+async function closeWidgetSidePanel() {
+  try {
+    await chrome.runtime.sendMessage({
+      type: "MDH_CLOSE_SIDE_PANEL",
+    });
+  } catch (error) {
+    // The widget should still open even if the browser cannot close the side panel.
   }
 }
 
