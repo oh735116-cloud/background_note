@@ -132,6 +132,10 @@ async function handleMessage(message, sender) {
       await closeSidePanel(message.payload, sender.tab);
       return { closed: true };
 
+    case "MDH_NOTIFY_HIGHLIGHT_SAVED":
+      await showHighlightSavedNotification(message.payload);
+      return { notified: true };
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -240,11 +244,31 @@ async function createHighlight(payload = {}, sender = {}) {
 
   await setStorage({ [STORAGE_KEYS.highlights]: highlights });
   await broadcastHighlightRefresh();
+  await showHighlightSavedNotification(savedHighlight);
 
   return savedHighlight;
 }
 
 // id로 기존 하이라이트를 찾아 수정한다.
+async function showHighlightSavedNotification(highlight = {}) {
+  if (!chrome.notifications?.create) {
+    return;
+  }
+
+  const keyword = normalizeKeyword(highlight.keyword) || "메모";
+  const memo = String(highlight.memo || "").trim();
+
+  await chrome.notifications.create(`mdh-saved-${Date.now()}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icon/icon-128x128.png"),
+    title: "메모 하이라이트 저장됨",
+    message: memo
+      ? `${truncateText(keyword, 32)}: ${truncateText(memo, 72)}`
+      : `${truncateText(keyword, 72)} 저장 완료`,
+    priority: 1,
+  });
+}
+
 async function updateHighlight(payload = {}) {
   if (!payload.id) {
     throw new Error("수정할 하이라이트 id가 없습니다.");
@@ -339,13 +363,24 @@ async function openSidePanel(payload = {}, tab = {}) {
   const tabId = payload?.tabId ?? tab?.id;
   const windowId = payload?.windowId ?? tab?.windowId;
 
-  if (windowId) {
-    await chrome.sidePanel.open({ windowId });
+  if (tabId) {
+    await chrome.sidePanel.open({ tabId });
+
+    if (chrome.sidePanel?.setOptions) {
+      await chrome.sidePanel
+        .setOptions({
+          tabId,
+          path: "sidepanel.html",
+          enabled: true,
+        })
+        .catch(() => {});
+    }
+
     return;
   }
 
-  if (tabId) {
-    await chrome.sidePanel.open({ tabId });
+  if (windowId) {
+    await chrome.sidePanel.open({ windowId });
     return;
   }
 
@@ -413,6 +448,11 @@ function normalizeKeyword(value) {
 }
 
 // storage에 저장할 하이라이트 id를 만든다.
+function truncateText(value, maxLength) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
 function createId() {
   return `hl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

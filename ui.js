@@ -7,9 +7,12 @@ const STORAGE_KEYS = {
   highlights: "highlights",
   pendingSelection: "pendingSelection",
   siteSettings: "siteSettings",
+  panelTheme: "panelTheme",
 };
 
 const DEFAULT_COLOR = "#fff3a3";
+const DEFAULT_PANEL_THEME = "clean";
+const PANEL_THEMES = new Set(["clean", "classic", "space"]);
 
 // 사이드패널 화면에서 자주 사용하는 DOM 요소를 모아 둔다.
 const elements = {
@@ -24,6 +27,10 @@ const elements = {
   reset: document.getElementById("resetButton"),
   siteLabel: document.getElementById("currentSiteLabel"),
   siteToggle: document.getElementById("siteToggleButton"),
+  themePicker: document.getElementById("themePicker"),
+  themeButtons: Array.from(
+    document.querySelectorAll("#themePicker button[data-theme]"),
+  ),
   notice: document.getElementById("noticeText"),
 };
 
@@ -48,12 +55,14 @@ async function init() {
     STORAGE_KEYS.highlights,
     STORAGE_KEYS.siteSettings,
     STORAGE_KEYS.pendingSelection,
+    STORAGE_KEYS.panelTheme,
   ]);
 
   highlights = Array.isArray(stored[STORAGE_KEYS.highlights])
     ? stored[STORAGE_KEYS.highlights]
     : [];
   siteSettings = stored[STORAGE_KEYS.siteSettings] || {};
+  applyPanelTheme(stored[STORAGE_KEYS.panelTheme]);
 
   // 현재 상태를 화면에 반영한다.
   renderSiteControl();
@@ -65,6 +74,7 @@ async function init() {
   elements.reset.addEventListener("click", resetForm);
   elements.list.addEventListener("click", handleListClick);
   elements.siteToggle?.addEventListener("click", toggleCurrentSite);
+  elements.themePicker?.addEventListener("click", handleThemeClick);
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") {
@@ -82,10 +92,41 @@ async function init() {
       siteSettings = changes[STORAGE_KEYS.siteSettings].newValue || {};
       renderSiteControl();
     }
+
+    if (changes[STORAGE_KEYS.panelTheme]) {
+      applyPanelTheme(changes[STORAGE_KEYS.panelTheme].newValue);
+    }
   });
 }
 
 // 컨텍스트 메뉴에서 가져온 임시 선택 텍스트가 있으면 키워드 입력칸에 채운다.
+function normalizePanelTheme(theme) {
+  return PANEL_THEMES.has(theme) ? theme : DEFAULT_PANEL_THEME;
+}
+
+function applyPanelTheme(theme) {
+  const nextTheme = normalizePanelTheme(theme);
+
+  document.body.dataset.theme = nextTheme;
+  elements.themeButtons.forEach((button) => {
+    const isSelected = button.dataset.theme === nextTheme;
+    button.classList.toggle("is-selected", isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
+}
+
+async function handleThemeClick(event) {
+  const button = event.target.closest("button[data-theme]");
+
+  if (!button) {
+    return;
+  }
+
+  const nextTheme = normalizePanelTheme(button.dataset.theme);
+  applyPanelTheme(nextTheme);
+  await setStorageValues({ [STORAGE_KEYS.panelTheme]: nextTheme });
+}
+
 function loadPendingSelection(pendingSelection) {
   if (!pendingSelection?.keyword) {
     return;
@@ -149,12 +190,22 @@ async function handleSubmit(event) {
     [STORAGE_KEYS.pendingSelection]: null,
   });
   await refreshTabs();
+  notifyHighlightSaved(nextHighlight);
 
   resetForm();
   renderHighlights();
 }
 
 // 목록 안의 수정/중지/삭제 버튼 클릭을 한곳에서 처리한다.
+function notifyHighlightSaved(highlight) {
+  chrome.runtime
+    .sendMessage({
+      type: "MDH_NOTIFY_HIGHLIGHT_SAVED",
+      payload: highlight,
+    })
+    .catch(() => {});
+}
+
 function handleListClick(event) {
   const button = event.target.closest("button[data-action]");
 

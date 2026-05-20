@@ -6,13 +6,18 @@
     <title>메모하이라이터</title>
     <link rel="stylesheet" href="ui.css" />
   </head>
-  <body data-view="sidepanel">
+  <body data-view="sidepanel" data-theme="clean">
     <main class="app-shell sidepanel-shell">
       <header class="topbar">
         <div class="title-block">
           <p class="eyebrow">나만의 공부 다이어리</p>
           <h1>메모 하이라이터</h1>
           <p id="countLabel">저장된 메모 0개</p>
+        </div>
+        <div id="themePicker" class="theme-picker" aria-label="스타일 선택">
+          <button type="button" data-theme="clean">basic</button>
+          <button type="button" data-theme="classic">diary</button>
+          <button type="button" data-theme="space">space</button>
         </div>
       </header>
 

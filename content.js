@@ -6,6 +6,7 @@
 const MDH_STORAGE_KEY = "highlights";
 const MDH_PENDING_SELECTION_KEY = "pendingSelection";
 const MDH_SITE_SETTINGS_KEY = "siteSettings";
+const MDH_PANEL_THEME_KEY = "panelTheme";
 
 // DOM/CSS 식별자
 const MDH_HIGHLIGHT_CLASS = "mdh-highlight";
@@ -14,6 +15,8 @@ const MDH_TOOLTIP_ID = "mdh-highlight-tooltip";
 const MDH_WIDGET_ID = "mdh-floating-widget";
 const MDH_WIDGET_RECENT_LIMIT = 4;
 const MDH_SELECTOR = `span.${MDH_HIGHLIGHT_CLASS}`;
+const MDH_DEFAULT_PANEL_THEME = "clean";
+const MDH_PANEL_THEMES = new Set(["clean", "classic", "space"]);
 
 // 사용자가 입력하거나 코드가 실행되는 영역은 하이라이트하지 않는다.
 const MDH_IGNORED_TAGS = new Set([
@@ -49,7 +52,9 @@ document.addEventListener("mouseout", handleHighlightMouseOut);
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (
     areaName === "local" &&
-    (changes[MDH_STORAGE_KEY] || changes[MDH_SITE_SETTINGS_KEY])
+    (changes[MDH_STORAGE_KEY] ||
+      changes[MDH_SITE_SETTINGS_KEY] ||
+      changes[MDH_PANEL_THEME_KEY])
   ) {
     if (changes[MDH_STORAGE_KEY]) {
       renderWidgetRecentHighlights();
@@ -57,6 +62,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
     if (changes[MDH_SITE_SETTINGS_KEY]) {
       syncWidgetSiteState();
+    }
+
+    if (changes[MDH_PANEL_THEME_KEY]) {
+      applyWidgetTheme(changes[MDH_PANEL_THEME_KEY].newValue);
     }
 
     scheduleHighlightRender();
@@ -221,6 +230,7 @@ async function initFloatingWidget() {
   site.addEventListener("click", toggleWidgetSite);
 
   await syncWidgetSiteState();
+  await syncWidgetTheme();
   await renderWidgetRecentHighlights();
   await loadStoredPendingSelection();
 }
@@ -236,6 +246,23 @@ function setWidgetExpanded(isExpanded) {
 }
 
 // manifest의 web_accessible_resources에 등록된 위젯 HTML을 불러온다.
+function normalizeWidgetTheme(theme) {
+  return MDH_PANEL_THEMES.has(theme) ? theme : MDH_DEFAULT_PANEL_THEME;
+}
+
+function applyWidgetTheme(theme) {
+  if (!mdhWidget) {
+    return;
+  }
+
+  mdhWidget.dataset.theme = normalizeWidgetTheme(theme);
+}
+
+async function syncWidgetTheme() {
+  const result = await getStorage([MDH_PANEL_THEME_KEY]);
+  applyWidgetTheme(result[MDH_PANEL_THEME_KEY]);
+}
+
 async function loadFloatingWidgetTemplate() {
   const response = await fetch(chrome.runtime.getURL("floating-widget.html"));
   return response.text();
@@ -252,6 +279,11 @@ async function openWidgetSidePanel() {
 
     if (opened) {
       setWidgetExpanded(false);
+    } else if (response?.error) {
+      console.warn(
+        "Failed to open Memo Highlighter side panel:",
+        response.error,
+      );
     }
 
     showWidgetMessage(
@@ -360,11 +392,21 @@ async function saveWidgetHighlight() {
   keywordInput.value = "";
   memoInput.value = "";
   showWidgetMessage("저장했어요.");
+  notifyHighlightSaved(nextHighlight);
   renderWidgetRecentHighlights(highlights);
   scheduleHighlightRender();
 }
 
 // 최근 메모를 위젯에 보여주고, 클릭하면 입력칸에 다시 불러온다.
+function notifyHighlightSaved(highlight) {
+  chrome.runtime
+    .sendMessage({
+      type: "MDH_NOTIFY_HIGHLIGHT_SAVED",
+      payload: highlight,
+    })
+    .catch(() => {});
+}
+
 async function renderWidgetRecentHighlights(nextHighlights) {
   if (!mdhWidget) {
     return;
