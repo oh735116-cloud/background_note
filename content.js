@@ -88,12 +88,20 @@ chrome.runtime.onMessage.addListener((message) => {
 // ============================================================
 
 // storage 변경이 연속으로 들어와도 실제 렌더링은 한 번만 실행한다.
+/**
+ *
+ * @returns renderStoredHighlights(본문에 하이라이트를 적용하는함수)를 120ms 뒤에 실행
+ */
 function scheduleHighlightRender() {
   clearTimeout(mdhRenderTimer);
   mdhRenderTimer = setTimeout(renderStoredHighlights, 120);
 }
 
 // 저장된 활성 키워드를 읽어 현재 페이지 본문에 하이라이트를 적용한다.
+/**
+ *
+ * @returns highlightTextNodes(저장된 텍스트를 모으는 함수)실행 본문에 하이라이트적용
+ */
 async function renderStoredHighlights() {
   removeExistingHighlights();
 
@@ -123,6 +131,10 @@ async function renderStoredHighlights() {
 }
 
 // 하이라이트 목록과 사이트별 설정을 함께 읽는다.
+/**
+ *
+ * @returns normalizeHighlights와 siteSttings를 객체로 반환
+ */
 async function getHighlightState() {
   const result = await getStorage([MDH_STORAGE_KEY, MDH_SITE_SETTINGS_KEY]);
 
@@ -131,12 +143,20 @@ async function getHighlightState() {
     siteSettings: result[MDH_SITE_SETTINGS_KEY] || {},
   };
 }
-
+/**
+ *
+ * @param {*} siteSettings
+ * @returns siteSettings에서 현재 페이지가 비/활성화인지 판단
+ */
 function isSiteDisabled(siteSettings) {
   return Boolean(siteSettings[getCurrentSiteKey()]?.disabled);
 }
 
 // 사이트별 설정 키로 쓸 현재 페이지 대표 주소를 만든다.
+/**
+ *
+ * @returns ()는 키이름(window.location.hostname, window.location.host, window.location.href) 중 하나
+ */
 function getCurrentSiteKey() {
   return (
     window.location.hostname || window.location.host || window.location.href
@@ -144,6 +164,11 @@ function getCurrentSiteKey() {
 }
 
 // 비활성/빈 키워드는 제외하고 검색용 소문자 키워드를 추가한다.
+/**
+ *
+ * @param {*} item
+ * @returns 객체반환
+ */
 function normalizeHighlight(item) {
   const keyword = normalizeKeyword(item?.keyword);
 
@@ -159,6 +184,11 @@ function normalizeHighlight(item) {
 }
 
 // 여러 키워드를 하나의 정규식으로 묶고, 메모 데이터는 Map으로 빠르게 찾는다.
+/**
+ *
+ * @param {*} highlights
+ * @returns
+ */
 function createHighlightMatcher(highlights) {
   const byKeyword = new Map();
   const patterns = [];
@@ -183,6 +213,11 @@ function createHighlightMatcher(highlights) {
 }
 
 // 정규식 특수문자가 들어간 키워드도 문자 그대로 검색되게 만든다.
+/**
+ *
+ * @param {*} value
+ * @returns 특수문자허용
+ */
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -192,6 +227,10 @@ function escapeRegExp(value) {
 // ============================================================
 
 // 웹페이지 오른쪽 아래에 위젯을 만들고 버튼 이벤트를 연결한다.
+/**
+ *
+ * @returns 위젯호출버튼
+ */
 async function initFloatingWidget() {
   if (document.getElementById(MDH_WIDGET_ID)) {
     return;
@@ -236,6 +275,10 @@ async function initFloatingWidget() {
 }
 
 // 위젯을 열면 패널을 보여주고, 최소화하면 오른쪽 아래 아이콘만 남긴다.
+/**
+ *
+ * @param {*} isExpanded
+ */
 function setWidgetExpanded(isExpanded) {
   const toggle = mdhWidget.querySelector(".mdh-widget-toggle");
   const panel = mdhWidget.querySelector(".mdh-widget-panel");
@@ -246,10 +289,19 @@ function setWidgetExpanded(isExpanded) {
 }
 
 // manifest의 web_accessible_resources에 등록된 위젯 HTML을 불러온다.
+/**
+ *
+ * @param {*} theme
+ * @returns
+ */
 function normalizeWidgetTheme(theme) {
   return MDH_PANEL_THEMES.has(theme) ? theme : MDH_DEFAULT_PANEL_THEME;
 }
-
+/**
+ *
+ * @param {*} theme
+ * @returns
+ */
 function applyWidgetTheme(theme) {
   if (!mdhWidget) {
     return;
@@ -257,18 +309,28 @@ function applyWidgetTheme(theme) {
 
   mdhWidget.dataset.theme = normalizeWidgetTheme(theme);
 }
-
+/**
+ *
+ * @returns 120ms 뒤에 테마실행
+ */
 async function syncWidgetTheme() {
   const result = await getStorage([MDH_PANEL_THEME_KEY]);
   applyWidgetTheme(result[MDH_PANEL_THEME_KEY]);
 }
-
+/**
+ *
+ * @returns url 출력
+ */
 async function loadFloatingWidgetTemplate() {
   const response = await fetch(chrome.runtime.getURL("floating-widget.html"));
   return response.text();
 }
 
 // 위젯에서 사이드패널 관리 화면을 연다.
+/**
+ *
+ * @returns 사이드패널열기
+ */
 async function openWidgetSidePanel() {
   try {
     const response = await chrome.runtime.sendMessage({
@@ -293,7 +355,10 @@ async function openWidgetSidePanel() {
     showWidgetMessage("사이드패널을 열 수 없어요.");
   }
 }
-
+/**
+ *
+ * @returns 사이드패널닫기
+ */
 async function closeWidgetSidePanel() {
   try {
     await chrome.runtime.sendMessage({
@@ -305,6 +370,11 @@ async function closeWidgetSidePanel() {
 }
 
 // 우클릭 메뉴로 가져온 선택 텍스트를 위젯 입력칸에 넣는다.
+/**
+ *
+ * @param {*} selection
+ * @returns
+ */
 function loadSelectionIntoWidget(selection) {
   const keyword = normalizeKeyword(selection?.keyword);
 
@@ -321,6 +391,7 @@ function loadSelectionIntoWidget(selection) {
 }
 
 // 메시지 타이밍을 놓쳤을 때를 대비해 저장된 임시 선택 텍스트도 확인한다.
+
 async function loadStoredPendingSelection() {
   const result = await getStorage([MDH_PENDING_SELECTION_KEY]);
   const selection = result[MDH_PENDING_SELECTION_KEY];
@@ -398,6 +469,10 @@ async function saveWidgetHighlight() {
 }
 
 // 최근 메모를 위젯에 보여주고, 클릭하면 입력칸에 다시 불러온다.
+/**
+ *
+ * @param {*} highlight
+ */
 function notifyHighlightSaved(highlight) {
   chrome.runtime
     .sendMessage({
@@ -406,7 +481,11 @@ function notifyHighlightSaved(highlight) {
     })
     .catch(() => {});
 }
-
+/**
+ *
+ * @param {*} nextHighlights
+ * @returns
+ */
 async function renderWidgetRecentHighlights(nextHighlights) {
   if (!mdhWidget) {
     return;
@@ -460,6 +539,7 @@ async function renderWidgetRecentHighlights(nextHighlights) {
 }
 
 // 현재 사이트의 하이라이트 사용 여부를 바꾼다.
+
 async function toggleWidgetSite() {
   const settings = await getSiteSettings();
   const siteKey = getCurrentSiteKey();
@@ -476,6 +556,7 @@ async function toggleWidgetSite() {
 }
 
 // 저장된 사이트 설정에 맞춰 위젯의 켜짐/꺼짐 표시를 바꾼다.
+
 async function syncWidgetSiteState() {
   if (!mdhWidget) {
     return;
@@ -489,6 +570,10 @@ async function syncWidgetSiteState() {
 }
 
 // 위젯에 짧은 상태 메시지를 보여주고 잠시 뒤 숨긴다.
+/**
+ *
+ * @param {*} message
+ */
 function showWidgetMessage(message) {
   const messageElement = mdhWidget.querySelector(".mdh-widget-message");
   messageElement.textContent = message;
@@ -504,6 +589,12 @@ function showWidgetMessage(message) {
 // ============================================================
 
 // TreeWalker로 텍스트 노드만 모아 하이라이트 치환을 수행한다.
+/**
+ *
+ * @param {*} root
+ * @param {*} matcher
+ * @returns 텍스트노드만 모아서 하이라이트로 치환
+ */
 function highlightTextNodes(root, matcher) {
   if (!root) {
     return;
@@ -528,6 +619,12 @@ function highlightTextNodes(root, matcher) {
 }
 
 // 매칭된 구간만 span으로 감싸고 나머지 텍스트는 그대로 둔다.
+/**
+ *
+ * @param {*} textNode
+ * @param {*} matcher
+ * @returns
+ */
 function replaceTextNodeMatches(textNode, matcher) {
   const text = textNode.nodeValue;
   const matches = findMatches(text, matcher);
@@ -567,6 +664,12 @@ function replaceTextNodeMatches(textNode, matcher) {
 }
 
 // 정규식 결과와 실제 하이라이트 데이터를 묶어 매칭 목록으로 만든다.
+/**
+ *
+ * @param {*} text
+ * @param {*} matcher
+ * @returns
+ */
 function findMatches(text, matcher) {
   const matches = [];
   matcher.regex.lastIndex = 0;
@@ -614,6 +717,11 @@ function removeExistingHighlights() {
 // ============================================================
 
 // 하이라이트 위에 마우스가 올라오면 메모가 있는 경우에만 툴팁을 띄운다.
+/**
+ *
+ * @param {*} event
+ * @returns
+ */
 function handleHighlightMouseOver(event) {
   const highlight = event.target.closest?.(MDH_SELECTOR);
 
@@ -811,7 +919,10 @@ function setStorage(data) {
     chrome.storage.local.set(data, resolve);
   });
 }
-
+/**
+ *
+ * @returns
+ */
 function getSiteSettings() {
   return getStorage([MDH_SITE_SETTINGS_KEY]).then(
     (result) => result[MDH_SITE_SETTINGS_KEY] || {},
